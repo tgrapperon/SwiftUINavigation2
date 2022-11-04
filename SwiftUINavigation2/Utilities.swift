@@ -75,7 +75,7 @@ public struct _NavigationDestination<Destination: View>: ViewModifier {
 
   public func body(content: Content) -> some View {
     content
-      .navigationDestination(isPresented: self.$isPresented) { self.destination }
+      .uiKitNavigationDestination(isPresented: self.$isPresented) { self.destination }
 
       .onChange(of: self.externalIsPresented) {
         print("\(label) - externalIsPresented (parent side) did change to \($0), assigning to isPresented which is \(isPresented)")
@@ -98,6 +98,7 @@ public struct _NavigationDestination<Destination: View>: ViewModifier {
       }
   }
 }
+
 
 struct DismissByState: EnvironmentKey {
   static var defaultValue: Self { .init {} }
@@ -268,5 +269,64 @@ struct DeferredView<Content: View>: View {
     } else {
       content
     }
+  }
+}
+
+
+extension View {
+  func uiKitNavigationDestination<V>(isPresented: Binding<Bool>, @ViewBuilder destination: @escaping () -> V) -> some View where V : View {
+    self.modifier(UIKitNavigationDestination<V>(isPresented: isPresented, destination: destination))
+  }
+}
+struct UIKitNavigationDestination<Destination: View>: ViewModifier {
+  @Binding var isPresented: Bool
+  let destination: () -> Destination
+  @State var navigationController: UINavigationController?
+  @State var presentationRequest: Destination?
+  @State var hostingViewController: UIViewController?
+  func present(animated: Bool) {
+    guard hostingViewController == nil else { return }
+    guard let navigationController else { return }
+    guard let presentationRequest else { return }
+    let viewController = UIHostingController(rootView: presentationRequest)
+    // There are ordering issues here
+    self.presentationRequest = nil
+    self.hostingViewController = viewController
+    navigationController.pushViewController(viewController, animated: animated)
+  }
+  
+  func dismiss(animated: Bool) {
+    guard let navigationController, let hostingViewController else { return }
+    let previous = navigationController.viewControllers.last(where:  { $0 != hostingViewController })
+    if let previous {
+      navigationController.popToViewController(previous, animated: animated)
+    } else {
+      navigationController.popToRootViewController(animated: animated)
+    }
+  }
+  
+  func body(content: Content) -> some View {
+    content
+      .onNavigationController{ navigationController, hostingViewController in
+        self.navigationController = navigationController
+        self.present(animated: false)
+      }
+      .onAppear {
+        // This can cause problems when this is a parent view that is respawned on popping
+        if isPresented {
+          self.presentationRequest = destination()
+          self.present(animated: false)
+        } else {
+//          self.dismiss(animated: false)
+        }
+      }
+      .onChange(of: isPresented) {
+        if $0 {
+          self.presentationRequest = destination()
+          self.present(animated: true)
+        } else {
+          self.dismiss(animated: true)
+        }
+      }
   }
 }
