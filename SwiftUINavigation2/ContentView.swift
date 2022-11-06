@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
+  @StateObject var coordinator = Navigation.Coordinator()
   var body: some View {
     DeferredView {
       NavigationStack {
@@ -14,10 +15,14 @@ struct ContentView: View {
             //                    )
             )
         )
+        .registerNavigationCoordinator()
       }
+      
     }
   }
 }
+
+
 
 struct ContentView_Previews: PreviewProvider {
   static var previews: some View {
@@ -99,6 +104,7 @@ struct AView: View {
             self.model.b = nil
           })
     }
+    
   }
 }
 
