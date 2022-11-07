@@ -15,6 +15,7 @@ struct ContentView: View {
             )
         )
       }
+      .observeNavigationBindings()
     }
   }
 }
@@ -75,6 +76,7 @@ final class EModel: ObservableObject {
 struct AView: View {
   @ObservedObject var model: AModel
   @Environment(\.dismiss) var dismiss
+  @State var x = 4
   var body: some View {
     VStack {
       Button {
@@ -130,13 +132,21 @@ struct BView: View {
     }
     .navigationBarTitle(Text("B"))
     .navigationDestination(label: "B->C", unwrapping: self.$model.c) { $c in
-      CView(model: c)
-        .present(with: self.model, value: \.c)
-        .environment(
-          \.dismissByState,
-          .init {
-            self.model.c = nil
-          })
+      VStack {
+        Button {
+          self.model.c = nil
+        } label: {
+          Text("Dismiss by State!")
+        }
+
+        CView(model: c)
+          .present(with: self.model, value: \.c)
+          .environment(
+            \.dismissByState,
+            .init {
+              self.model.c = nil
+            })
+      }
     }
   }
 }
