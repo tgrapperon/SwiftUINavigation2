@@ -100,14 +100,8 @@ extension View {
       let bindings = bindings.sorted(by: { $0.value.label < $1.value.label })
       VStack {
         ForEach(bindings, id: \.0) {
-          BindingView(
-            id: $0.value.id,
-            label: $0.value.label,
-            structuralID:$0.value.structuralID,
-            isAppeared: $0.value.isAppeared,
-            externalIsPresented: $0.value.$externalBinding,
-            internalIsPresented: $0.value.$internalBinding
-          )
+          BindingView(navigationBinding: $0.value)
+            .id($0.key)
         }
       }
     }
@@ -131,22 +125,27 @@ extension EnvironmentValues {
 }
 
 struct BindingView: View {
-  var id: UUID
-  var label: String
-  var structuralID: ObjectIdentifier
-  var isAppeared: Bool
-  @Binding var externalIsPresented: Bool
+  var navigationBinding: NavigationBinding
+  
+  var isInstalled: Bool { navigationBinding.isInstalled }
+  var label: String { navigationBinding.label }
+  var structuralID: ObjectIdentifier { navigationBinding.structuralID }
+  
   @Binding var internalIsPresented: Bool
+  @Binding var externalIsPresented: Bool
+  init(navigationBinding: NavigationBinding) {
+    self.navigationBinding = navigationBinding
+    self._internalIsPresented = navigationBinding.$internalBinding
+    self._externalIsPresented = navigationBinding.$externalBinding
+  }
+  
   var body: some View {
     VStack {
       HStack {
         Image(systemName: "eye")
           .imageScale(.small)
-          .symbolVariant(isAppeared ? .circle.fill : .slash.circle)
+          .symbolVariant(isInstalled ? .circle.fill : .slash.circle)
         Text(label)
-        Text(id.uuidString).font(.caption2)
-      }
-      HStack {
         Text(String(describing: structuralID))
           .lineLimit(1)
           .font(.caption2)
@@ -154,6 +153,9 @@ struct BindingView: View {
     }
     .monospaced()
       .foregroundColor(self.internalIsPresented ? .blue : .red)
+      .onAppear {
+        self.internalIsPresented = externalIsPresented
+      }
       .onChange(of: self.externalIsPresented) {
         print("\(self.label) - externalIsPresented (parent side) did change to \($0), assigning to isPresented which is \(self.internalIsPresented)")
 
@@ -169,9 +171,8 @@ struct BindingView: View {
 
 struct NavigationBinding {
   var label: String
-  var id: UUID
   var structuralID: ObjectIdentifier
-  var isAppeared: Bool
+  var isInstalled: Bool
   @Binding var externalBinding: Bool
   @Binding var internalBinding: Bool
 }
@@ -179,26 +180,26 @@ struct NavigationBinding {
 struct NavigationBindingKey: PreferenceKey {
   static var defaultValue: [ObjectIdentifier: NavigationBinding] { [:] }
   static func reduce(value: inout [ObjectIdentifier: NavigationBinding], nextValue: () -> [ObjectIdentifier: NavigationBinding]) {
-//    print("Merging \(nextValue().keys) with \(value.keys)")
-    value.merge(nextValue(), uniquingKeysWith: { _, key in key })
+    value.merge(nextValue(), uniquingKeysWith: { $1 })
   }
 }
 
-struct Pair<T, U> {}
-
+// We use a wrapper to get a correct "structural identity" (this is not that, but you get the idea)
+// View modifiers are not changing the identity of the content view, so we can't really use them here
 @available(iOS 16, macOS 13, tvOS 16, watchOS 9, *)
 public struct _NavigationDestinationWrapper<Content: View, Destination: View>: View {
   let structuralID: ObjectIdentifier
   let label: String
   let content: Content
   let destination: Destination
+  
   @Binding var externalIsPresented: Bool
   @State var isPresented = false
 
   @State var identifier = UUID()
   @Environment(\.bindingComponents) var bindingComponents
   @State var viewID: UUID?
-  @State var isAppeared: Bool = false
+  @State var isInstalled: Bool = false
   
   init(
     label: String,
@@ -207,7 +208,7 @@ public struct _NavigationDestinationWrapper<Content: View, Destination: View>: V
     destination: Destination
   ) {
     self.label = label
-    self.structuralID = ObjectIdentifier(Pair<Content, Destination>.self)
+    self.structuralID = ObjectIdentifier((Content, Destination).self)
     self._externalIsPresented = isPresented
     self.content = content
     self.destination = destination
@@ -215,105 +216,27 @@ public struct _NavigationDestinationWrapper<Content: View, Destination: View>: V
 
   public var body: some View {
     content
-
-      .preference(
-        key: NavigationBindingKey.self,
-        value: [structuralID: .init(
-          label:label,
-          id: identifier,
-          structuralID: structuralID,
-          isAppeared: isAppeared,
-          externalBinding: self.$externalIsPresented,
-          internalBinding: self.$isPresented
-        )]
-      )
-      .onAppear {
-        self.isAppeared = true
-        self.isPresented = self.externalIsPresented
-      }
-      .onDisappear {
-        self.isAppeared = false
-      }
-      .navigationDestination(isPresented: self.$externalIsPresented) {
-        self.destination
-      }
-  }
-}
-
-@available(iOS 16, macOS 13, tvOS 16, watchOS 9, *)
-public struct _NavigationDestination<Destination: View>: ViewModifier {
-  let structuralID: ObjectIdentifier
-  let label: String
-  let destination: Destination
-  @Binding var externalIsPresented: Bool
-  @State var isPresented = false
-
-  @State var identifier = UUID()
-  @Environment(\.bindingComponents) var bindingComponents
-  @State var viewID: UUID?
-  @State var isAppeared: Bool = false
-  init(
-    label: String,
-    structuralID: ObjectIdentifier,
-    isPresented: Binding<Bool>,
-    destination: Destination
-  ) {
-    self.label = label
-    self.structuralID = structuralID
-    self._externalIsPresented = isPresented
-    self.destination = destination
-  }
-
-  public func body(content: Content) -> some View {
-    content
       .navigationDestination(isPresented: self.$isPresented) {
         self.destination
       }
-      .onAppear {
-//        print("\(label) - onAppear: isPresented:\(isPresented) - externalIsPresented:\(externalIsPresented)")
-        print("\(label) - onAppear:\(identifier)")
-        self.isAppeared = true
-        self.isPresented = self.externalIsPresented
-      }
-      .onDisappear {
-        print("\(label) - onDisappear:\(identifier)")
-        self.isAppeared = false
-//        print("\(label) - onDisappear: isPresented:\(isPresented) - externalIsPresented:\(externalIsPresented)")
-      }
       .preference(
         key: NavigationBindingKey.self,
         value: [structuralID: .init(
           label:label,
-          id: identifier,
           structuralID: structuralID,
-          isAppeared: isAppeared,
+          isInstalled: isInstalled,
           externalBinding: self.$externalIsPresented,
           internalBinding: self.$isPresented
         )]
       )
+      .onAppear {
+        self.isInstalled = true
+      }
+      .onDisappear {
+        self.isInstalled = false
+      }
   }
 }
-
-
-
-//struct ViewID: UIViewRepresentable {
-//  let label: String
-//  @Binding var id: UUID?
-//  func makeUIView(context: Context) -> UIViewID {
-//    UIViewID()
-//  }
-//
-//  func updateUIView(_ uiView: UIViewID, context: Context) {
-////    id = uiView.id
-//    print("id for \(label): \(uiView.id)")
-//  }
-//  final class UIViewID: UIView {
-//    let id = UUID()
-//  }
-//}
-
-
-
 
 struct DismissByState: EnvironmentKey {
   static var defaultValue: Self { .init {} }
@@ -351,7 +274,9 @@ struct NavigationDestinationPresenter<Model: ObservableObject>: ViewModifier {
   @State var hostingViewController: UIViewController?
   @Environment(\.dismiss) var dismissFromEnvironment
   func dismiss() {
+    // SwiftUI
 //    dismissFromEnvironment()
+    // UIKit
     if let previous = navigationController?.viewControllers.last(where: {
       $0 != hostingViewController
     }) {

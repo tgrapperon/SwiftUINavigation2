@@ -5,14 +5,15 @@ struct ContentView: View {
     DeferredView {
       NavigationStack {
         AView(
-          model: AModel(//                    b: BModel(
-            //                      c: CModel(
-            //                        d: DModel(
-            //                          e: EModel()
-            //                        )
-            //                      )
-            //                    )
-            )
+          model: AModel(
+//            b: BModel(
+//              c: CModel(
+//                d: DModel(
+//                  e: EModel()
+//                )
+//              )
+//            )
+          )
         )
       }
       .observeNavigationBindings()
@@ -29,7 +30,7 @@ struct ContentView_Previews: PreviewProvider {
 @available(iOS 14, *)
 final class AModel: ObservableObject {
   @Published var b: BModel?
-  
+
   init(b: BModel? = nil) {
     self.b = b
   }
@@ -95,11 +96,7 @@ struct AView: View {
     .navigationDestination(label: "A->B", unwrapping: self.$model.b) { $b in
       BView(model: b)
         .present(with: self.model, value: \.b)
-        .environment(
-          \.dismissByState,
-          .init {
-            self.model.b = nil
-          })
+        .environment(\.dismissByState, .init { self.model.b = nil })
     }
   }
 }
@@ -114,6 +111,7 @@ struct BView: View {
       Button("State dismissal") {
         self.dismissByState()
       }
+
       Button("Environment dismissal") {
         self.dismiss()
       }
@@ -136,16 +134,12 @@ struct BView: View {
         Button {
           self.model.c = nil
         } label: {
-          Text("Dismiss by State!")
+          Text("Dismiss by State directly")
         }
 
         CView(model: c)
           .present(with: self.model, value: \.c)
-          .environment(
-            \.dismissByState,
-            .init {
-              self.model.c = nil
-            })
+          .environment(\.dismissByState, .init { self.model.c = nil })
       }
     }
   }
@@ -183,12 +177,8 @@ struct CView: View {
     .navigationDestination(label: "C->D", unwrapping: self.$model.d) { $d in
       DView(model: d)
         .present(with: self.model, value: \.d)
+        .environment(\.dismissByState, .init { self.model.d = nil })
 
-        .environment(
-          \.dismissByState,
-          .init {
-            self.model.d = nil
-          })
     }
   }
 }
@@ -223,15 +213,11 @@ struct DView: View {
     .navigationBarTitle(Text("D"))
     .navigationDestination(
       label: "D->E",
-      unwrapping: self.$model.e) { $e in
+      unwrapping: self.$model.e
+    ) { $e in
       EView(model: e)
         .present(with: self.model, value: \.e)
-
-        .environment(
-          \.dismissByState,
-          .init {
-            self.model.e = nil
-          })
+        .environment(\.dismissByState, .init { self.model.e = nil })
     }
   }
 }
